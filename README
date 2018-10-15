@@ -1,0 +1,41 @@
+A simple kernel driver for the RXB6 RF receiver
+
+The driver creates a character device /dev/rxb6 that returns one line per
+detected pulse or a marker line. Every line is prefixed by a timestamp
+(microseconds since boot).
+
+Markers are:
+  SYNC:      A sync pulse is detected.
+  ERR_LEN:   The detected pulse is too short.
+  ERR_LEVEL: The level of the pulse didn't toogle (missed pulse).
+  END:       An end pulse is detected.
+
+A pulse line contains the level (0 or 1) of the detected pulse followed by its
+length in microseconds.
+
+The driver starts returning data once a sync pulse is detected and until an end
+pulse or an error condition is encountered.
+
+A typical sequence looks like the following:
+
+338658916502 SYNC
+338658916502 1 8945
+338658917118 0 616
+338658921181 1 4063
+...
+338659048794 0 602
+338659050929 1 2135
+338659051520 0 591
+338659060524 SYNC
+338659060524 1 9004
+338659061143 0 619
+338659065191 1 4048
+...
+338659480695 0 602
+338659482751 1 2056
+338659483315 0 564
+338659492322 SYNC
+338659492322 1 9007
+338659492915 0 593
+338659920622 1 427707
+338659920622 END
