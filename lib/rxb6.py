@@ -133,4 +133,6 @@ class RXB6(object):
         Read and return decode data from the device
         """
         for data in self.read(timeout=timeout):
-            yield decode(data)
+            d = decode(data)
+            if d:
+                yield d
