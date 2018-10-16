@@ -18,14 +18,50 @@ BIT0_MAX = 3500
 BIT1_MIN = 4000
 BIT1_MAX = 5500
 
+def _round(val):
+    int(val * 10) / 10
+
+def average(data):
+    """
+    Average decoded sensor data
+    """
+    # Split the data into lists for the individual sensors
+    sensor = {}
+    for d in data:
+        key = "%s:%s" % (d["sensor"], d["channel"])
+        if key not in sensor:
+            sensor[key] = []
+        sensor[key].append(d)
+
+    # Calculate the averages for the individual sensors
+    avg = {}
+    for key in sorted(sensor):
+        avg[key] = {
+            "timestamp": sensor[key][0]["timestamp"],
+            "sensor": key,
+            "temperature": int((sum(s["temperature"] for s in sensor[key]) /
+                                len(sensor[key])) * 10 + 0.5) / 10,
+            "humidity": int((sum(s["humidity"] for s in sensor[key]) /
+                             len(sensor[key])) * 10 + 0.5) / 10,
+        }
+
+    return avg
+
 
 def decode(dataset):
     """
-    Decode a dataset
+    Decode a sensor dataset
+
+    A dataset is a list of sensor records returned by rxb6 device. Each record
+    is a list containing four elements:
+      1. timestamp (seconds since the epoch)
+      2. utime (microseconds since boot)
+      3. pulse level (0 or 1)
+      4. pulse width (in microseconds)
     """
-    # We only care about the 3rd column which contains the widths of the
+    # We only care about the 4th column which contains the widths of the
     # individual high and low pulses
-    widths = [d[2] if len(d) == 3 else 0 for d in dataset]
+    widths = [d[3] if len(d) == 4 else 0 for d in dataset]
 
     # Ignore the last pulse width if the list has an odd length
     if len(widths) % 2:
@@ -60,7 +96,7 @@ def decode(dataset):
     humidity = (data >> (num_bits - 36)) & 0xff
 
     result = {
-        "timestamp": int(time.time()),
+        "timestamp": dataset[0][0],
         "sensor": sensor,
         "test": test,
         "channel": channel,
@@ -82,14 +118,14 @@ def _timeout_handler(_signum, _frame):
 
 class RXB6(object):
     """
-    Simple RXB6 class
+    Simple rxb6 class
     """
     def __init__(self, device):
         self.device = device
 
     def read(self, timeout=0):
         """
-        Read and return raw data from the device
+        Read and return sensor records from the device
         """
         orig = None
         if timeout:
@@ -118,7 +154,9 @@ class RXB6(object):
                         continue
 
                     if record:
-                        data.append(line.split(' '))
+                        # Prepend a timestamp to the line and append the record
+                        # to the collected data
+                        data.append([int(time.time())] + line.split(' '))
 
         except TimeoutError:
             pass
@@ -130,7 +168,7 @@ class RXB6(object):
 
     def read_decoded(self, timeout=0):
         """
-        Read and return decode data from the device
+        Read and return decoded data from the device
         """
         for data in self.read(timeout=timeout):
             d = decode(data)
