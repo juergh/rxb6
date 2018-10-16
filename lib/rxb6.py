@@ -18,8 +18,6 @@ BIT0_MAX = 3500
 BIT1_MIN = 4000
 BIT1_MAX = 5500
 
-def _round(val):
-    int(val * 10) / 10
 
 def average(data):
     """
@@ -34,18 +32,18 @@ def average(data):
         sensor[key].append(d)
 
     # Calculate the averages for the individual sensors
-    avg = {}
+    result = []
     for key in sorted(sensor):
-        avg[key] = {
+        result.append({
             "timestamp": sensor[key][0]["timestamp"],
             "sensor": key,
             "temperature": int((sum(s["temperature"] for s in sensor[key]) /
                                 len(sensor[key])) * 10 + 0.5) / 10,
             "humidity": int((sum(s["humidity"] for s in sensor[key]) /
                              len(sensor[key])) * 10 + 0.5) / 10,
-        }
+        })
 
-    return avg
+    return result
 
 
 def decode(dataset):
