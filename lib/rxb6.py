@@ -172,3 +172,9 @@ class RXB6(object):
             d = decode(data)
             if d:
                 yield d
+
+    def read_averaged(self, timeout):
+        """
+        Read and return averaged data from the device
+        """
+        return average(self.read_decoded(timeout=timeout))
