@@ -19,7 +19,7 @@ BIT1_MIN = 4000
 BIT1_MAX = 5500
 
 
-def average(data):
+def average_data(data):
     """
     Average decoded sensor data
     """
@@ -46,20 +46,68 @@ def average(data):
     return result
 
 
-def decode(dataset):
+def decode_record(dataword):
     """
-    Decode a sensor dataset
+    Decode a data record
 
-    A dataset is a list of sensor records returned by rxb6 device. Each record
-    is a list containing four elements:
+    A data record is a tuple with three elements:
       1. timestamp (seconds since the epoch)
-      2. utime (microseconds since boot)
-      3. pulse level (0 or 1)
-      4. pulse width (in microseconds)
+      2. decoded data
+      3. number of bits
+
+    The returned result is a dictionary containing the decoded data received
+    from the sensor.
     """
-    # We only care about the 4th column which contains the widths of the
-    # individual high and low pulses
-    widths = [d[3] if len(d) == 4 else 0 for d in dataset]
+    timestamp, data, num_bits = dataword
+
+    if num_bits < 36:
+        print("Error: Not enough bits (%d)" % num_bits)
+        return None
+
+    # And finally pull the sensor data out
+    sensor = (data >> (num_bits - 12)) & 0xfff
+    test = (data >> (num_bits - 14)) & 0x1
+    channel = ((data >> (num_bits - 16)) & 0x3) + 1
+    temperature = ((data >> (num_bits - 28)) & 0xfff) / 10
+    humidity = (data >> (num_bits - 36)) & 0xff
+
+    result = {
+        "timestamp": timestamp,
+        "sensor": sensor,
+        "test": test,
+        "channel": channel,
+        "temperature": temperature,
+        "humidity": humidity,
+    }
+
+    return result
+
+
+def decode_set(dataset):
+    """
+    Decode a sensor data set and return a data record
+
+    A data set is a list of sensor records returned by the rxb6 device. Each
+    sensor record is a tuple with three elements:
+      1. timestamp (seconds since the epoch)
+      2. pulse level (0 or 1)
+      3. pulse width (in microseconds)
+
+    The returned data record is a tuple with three elements:
+      1. timestamp (seconds since the epoch)
+      2. decoded data
+      3. number of bits
+    """
+    # Sanity check: Verify that the levels of the pulses toggle
+    level = -1
+    for d in dataset:
+        if d[1] == level:
+            print("Error: Levels don't toggle properly")
+            return None
+        level = d[1]
+
+    # Pull out the widths of the individual pulses
+    widths = [d[2] if len(d) == 3 else 0 for d in dataset]
 
     # Ignore the last pulse width if the list has an odd length
     if len(widths) % 2:
@@ -69,10 +117,6 @@ def decode(dataset):
     # bit widths
     bits = [int(widths[i]) + int(widths[i+1]) for i in range(0, len(widths), 2)]
     num_bits = len(bits)
-
-    if num_bits < 36:
-        print("Error: Not enough bits (%d)" % num_bits)
-        return None
 
     # Decode the individual bits
     data = 0
@@ -86,23 +130,7 @@ def decode(dataset):
             print("Error: Invalid bit width (%d)" % b)
             return None
 
-    # And finally pull the sensor data out
-    sensor = (data >> (num_bits - 12)) & 0xfff
-    test = (data >> (num_bits - 14)) & 0x1
-    channel = ((data >> (num_bits - 16)) & 0x3) + 1
-    temperature = ((data >> (num_bits - 28)) & 0xfff) / 10
-    humidity = (data >> (num_bits - 36)) & 0xff
-
-    result = {
-        "timestamp": dataset[0][0],
-        "sensor": sensor,
-        "test": test,
-        "channel": channel,
-        "temperature": temperature,
-        "humidity": humidity,
-    }
-
-    return result
+    return (dataset[0][0], data, num_bits)
 
 
 def _timeout_handler(_signum, _frame):
@@ -141,9 +169,9 @@ class RXB6(object):
 
                     if "SYNC" in line:
                         record = True
-                        if data and len(data) > 1:
-                            # Drop the first element (sync pulse)
-                            yield data[1:]
+                        if data and len(data) > 2:
+                            # Drop the first two elements (sync pulse)
+                            yield data[2:]
                         data = []
                         continue
 
@@ -164,17 +192,26 @@ class RXB6(object):
                 signal.signal(signal.SIGALRM, orig)
                 signal.alarm(0)
 
-    def read_decoded(self, timeout=0):
+    def read_record(self, timeout=0):
         """
-        Read and return decoded data from the device
+        Read and return data records
         """
         for data in self.read(timeout=timeout):
-            d = decode(data)
-            if d:
-                yield d
+            val = decode_set(data)
+            if val:
+                yield val
 
-    def read_averaged(self, timeout):
+    def read_decoded(self, timeout=0):
         """
-        Read and return averaged data from the device
+        Read and return decoded records
         """
-        return average(self.read_decoded(timeout=timeout))
+        for data in self.read_record(timeout=timeout):
+            val = decode_record(data)
+            if val:
+                yield val
+
+    def read_average(self, timeout):
+        """
+        Read and return averaged data
+        """
+        return average_data(self.read_decoded(timeout=timeout))
