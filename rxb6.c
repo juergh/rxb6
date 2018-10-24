@@ -32,6 +32,7 @@ static unsigned long pulse_min_len = 450;
 static unsigned long sync_pulse_min_len = 8000;
 static unsigned long sync_pulse_max_len = 10000;
 static unsigned long end_pulse_min_len = 10000;
+static unsigned long print_timestamps = 0;
 
 DEFINE_KFIFO(rxb6_fifo, char, 128);
 DECLARE_WAIT_QUEUE_HEAD(rxb6_fifo_wq);
@@ -41,10 +42,11 @@ static void vprintk_fifo(u64 ts, const char *fmt, ...)
 {
 	va_list args;
 	char buf[64];
-	int len;
+	int len = 0;
 
 	/* Prefix the line with the timestamp */
-	len = snprintf(buf, sizeof(buf), "%llu ", ts);
+	if (print_timestamps)
+		len = snprintf(buf, sizeof(buf), "%llu ", ts);
 
 	va_start(args, fmt);
 	len += vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
@@ -205,17 +207,20 @@ SYSFS_ATTR_SHOW_STORE(pulse_min_len)
 SYSFS_ATTR_SHOW_STORE(sync_pulse_min_len)
 SYSFS_ATTR_SHOW_STORE(sync_pulse_max_len)
 SYSFS_ATTR_SHOW_STORE(end_pulse_min_len)
+SYSFS_ATTR_SHOW_STORE(print_timestamps)
 
 static DEVICE_ATTR_RW(pulse_min_len);
 static DEVICE_ATTR_RW(sync_pulse_min_len);
 static DEVICE_ATTR_RW(sync_pulse_max_len);
 static DEVICE_ATTR_RW(end_pulse_min_len);
+static DEVICE_ATTR_RW(print_timestamps);
 
 static struct attribute *rxb6_sysfs_attr[] = {
         &dev_attr_pulse_min_len.attr,
         &dev_attr_sync_pulse_min_len.attr,
         &dev_attr_sync_pulse_max_len.attr,
         &dev_attr_end_pulse_min_len.attr,
+        &dev_attr_print_timestamps.attr,
         NULL
 };
 
