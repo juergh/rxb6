@@ -24,14 +24,14 @@
 
 #define GPIO_PIN 		6
 
-#define PULSE_MIN_LEN		500
-#define SYNC_PULSE_MIN_LEN	8000
-#define SYNC_PULSE_MAX_LEN	10000
-#define END_PULSE_MIN_LEN       10000
-
 static int rxb6_major;
 static struct class *rxb6_class = NULL;
 static struct device *rxb6_dev = NULL;
+
+static unsigned long pulse_min_len = 450;
+static unsigned long sync_pulse_min_len = 8000;
+static unsigned long sync_pulse_max_len = 10000;
+static unsigned long end_pulse_min_len = 10000;
 
 DEFINE_KFIFO(rxb6_fifo, char, 128);
 DECLARE_WAIT_QUEUE_HEAD(rxb6_fifo_wq);
@@ -77,7 +77,7 @@ static irqreturn_t rxb6_irq_handler(int irq, void *data)
 	pulse_len = now_usec - prev_usec;
 
 	/* Ignore short pulses and abort recording */
-	if (pulse_len < PULSE_MIN_LEN) {
+	if (pulse_len < pulse_min_len) {
 		if (record) {
 			record = false;
 			vprintk_fifo(now_usec, "ERR_LEN\n");
@@ -86,8 +86,8 @@ static irqreturn_t rxb6_irq_handler(int irq, void *data)
 	}
 
 	/* Start recording if this is a sync pulse */
-	if (pulse_len < SYNC_PULSE_MAX_LEN &&
-	    pulse_len > SYNC_PULSE_MIN_LEN) {
+	if (pulse_len < sync_pulse_max_len &&
+	    pulse_len > sync_pulse_min_len) {
 		record = true;
 		prev_val = -1;
 		vprintk_fifo(now_usec, "SYNC\n");
@@ -100,7 +100,7 @@ static irqreturn_t rxb6_irq_handler(int irq, void *data)
 		vprintk_fifo(now_usec, "%u %llu\n", now_val, pulse_len);
 
 		/* Stop recording if this is an end pulse */
-		if (pulse_len > END_PULSE_MIN_LEN) {
+		if (pulse_len > end_pulse_min_len) {
 			record = false;
 			vprintk_fifo(now_usec, "END\n");
 		}
@@ -118,6 +118,10 @@ out:
 	prev_usec = now_usec;
 	return IRQ_HANDLED;
 }
+
+/* -------------------------------------------------------------------------
+ * char device
+ * ------------------------------------------------------------------------- */
 
 static int rxb6_open(struct inode *inode, struct file *file)
 {
@@ -175,6 +179,54 @@ static struct file_operations rxb6_fops =
 	.read           = rxb6_read,
 };
 
+/* -------------------------------------------------------------------------
+ * sysfs
+ * ------------------------------------------------------------------------- */
+
+#define SYSFS_ATTR_SHOW_STORE(var)					\
+	static ssize_t var##_show(struct device *dev,			\
+				    struct device_attribute *attr,	\
+				  char *buf)				\
+	{								\
+		return sprintf(buf, "%ld\n", var);			\
+	}								\
+									\
+	static ssize_t var##_store(struct device *dev,			\
+				   struct device_attribute *attr,	\
+				   const char *buf, size_t count)	\
+	{								\
+		int err;						\
+									\
+		err = kstrtoul(buf, 10, &var);				\
+		return err ? err : count;				\
+	}
+
+SYSFS_ATTR_SHOW_STORE(pulse_min_len)
+SYSFS_ATTR_SHOW_STORE(sync_pulse_min_len)
+SYSFS_ATTR_SHOW_STORE(sync_pulse_max_len)
+SYSFS_ATTR_SHOW_STORE(end_pulse_min_len)
+
+static DEVICE_ATTR_RW(pulse_min_len);
+static DEVICE_ATTR_RW(sync_pulse_min_len);
+static DEVICE_ATTR_RW(sync_pulse_max_len);
+static DEVICE_ATTR_RW(end_pulse_min_len);
+
+static struct attribute *rxb6_sysfs_attr[] = {
+        &dev_attr_pulse_min_len.attr,
+        &dev_attr_sync_pulse_min_len.attr,
+        &dev_attr_sync_pulse_max_len.attr,
+        &dev_attr_end_pulse_min_len.attr,
+        NULL
+};
+
+static const struct attribute_group rxb6_sysfs_group = {
+        .attrs = rxb6_sysfs_attr,
+};
+
+/* -------------------------------------------------------------------------
+ * module init/exit
+ * ------------------------------------------------------------------------- */
+
 static int __init rxb6_init (void)
 {
 	int err = 0;
@@ -200,10 +252,16 @@ static int __init rxb6_init (void)
 		goto err_class_destroy;
 	}
 
+	err = sysfs_create_group(&rxb6_dev->kobj, &rxb6_sysfs_group);
+	if (err) {
+		pr_err("Failed to cretae sysfs group\n");
+		goto err_device_destroy;
+	}
+
 	err = gpio_request(GPIO_PIN, DEVNAME);
 	if (err) {
 		pr_err("Failed to reserve GPIO %d\n", GPIO_PIN);
-		goto err_device_destroy;
+		goto err_sysfs_remove_group;
 	}
 
 	err = gpio_direction_input(GPIO_PIN);
@@ -216,6 +274,8 @@ static int __init rxb6_init (void)
 
 err_gpio_free:
 	gpio_free(GPIO_PIN);
+err_sysfs_remove_group:
+	sysfs_remove_group(&rxb6_dev->kobj, &rxb6_sysfs_group);
 err_device_destroy:
 	device_destroy(rxb6_class, MKDEV(rxb6_major, 0));
 err_class_destroy:
@@ -228,6 +288,7 @@ err_unregister_chrdev:
 static void __exit rxb6_exit (void)
 {
 	gpio_free(GPIO_PIN);
+	sysfs_remove_group(&rxb6_dev->kobj, &rxb6_sysfs_group);
 	device_destroy(rxb6_class, MKDEV(rxb6_major, 0));
 	class_destroy(rxb6_class);
 	unregister_chrdev(rxb6_major, DEVNAME);
