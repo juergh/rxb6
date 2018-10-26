@@ -14,4 +14,6 @@ unload:
 
 load:
 	insmod ./rxb6.ko
+	sleep 1
+	chmod 666 /dev/rxb6
 	raspi-gpio set 6 pn

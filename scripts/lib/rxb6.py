@@ -8,15 +8,19 @@
 # under the terms of the GNU General Public License version 2 as published by
 # the Free Software Foundation.
 
+import logging
 import signal
+from socket import gethostname
 import sys
 import time
 
-BIT0_MIN = 2000
-BIT0_MAX = 3500
+from lib import sensors
 
-BIT1_MIN = 4000
-BIT1_MAX = 5500
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s " +
+                    gethostname() + " rxb6: %(message)s",
+                    datefmt="%b %d %H:%M:%S")
+logger = logging.getLogger("rxb6")
 
 
 def average_data(data):
@@ -26,7 +30,7 @@ def average_data(data):
     # Split the data into lists for the individual sensors
     sensor = {}
     for d in data:
-        key = "%s:%s" % (d["sensor"], d["channel"])
+        key = d["name"]
         if key not in sensor:
             sensor[key] = []
         sensor[key].append(d)
@@ -36,49 +40,12 @@ def average_data(data):
     for key in sorted(sensor):
         result.append({
             "timestamp": sensor[key][0]["timestamp"],
-            "sensor": key,
+            "name": key,
             "temperature": int((sum(s["temperature"] for s in sensor[key]) /
                                 len(sensor[key])) * 10 + 0.5) / 10,
             "humidity": int((sum(s["humidity"] for s in sensor[key]) /
                              len(sensor[key])) * 10 + 0.5) / 10,
         })
-
-    return result
-
-
-def decode_record(dataword):
-    """
-    Decode a data record
-
-    A data record is a tuple with three elements:
-      1. timestamp (seconds since the epoch)
-      2. decoded data
-      3. number of bits
-
-    The returned result is a dictionary containing the decoded data received
-    from the sensor.
-    """
-    timestamp, data, num_bits = dataword
-
-    if num_bits < 36:
-        print("Error: Not enough bits (%d)" % num_bits)
-        return None
-
-    # And finally pull the sensor data out
-    sensor = (data >> (num_bits - 12)) & 0xfff
-    test = (data >> (num_bits - 14)) & 0x1
-    channel = ((data >> (num_bits - 16)) & 0x3) + 1
-    temperature = ((data >> (num_bits - 28)) & 0xfff) / 10
-    humidity = (data >> (num_bits - 36)) & 0xff
-
-    result = {
-        "timestamp": timestamp,
-        "sensor": sensor,
-        "test": test,
-        "channel": channel,
-        "temperature": temperature,
-        "humidity": humidity,
-    }
 
     return result
 
@@ -98,14 +65,6 @@ def decode_set(dataset):
       2. decoded data
       3. number of bits
     """
-    # Sanity check: Verify that the levels of the pulses toggle
-    level = -1
-    for d in dataset:
-        if d[1] == level:
-            print("Error: Levels don't toggle properly")
-            return None
-        level = d[1]
-
     # Pull out the widths of the individual pulses
     widths = [d[2] if len(d) == 3 else 0 for d in dataset]
 
@@ -122,12 +81,12 @@ def decode_set(dataset):
     data = 0
     for b in bits:
         data = data << 1
-        if b > BIT0_MIN and b < BIT0_MAX:
+        if sensors.is_bit0(b):
             pass
-        elif b > BIT1_MIN and b < BIT1_MAX:
+        elif sensors.is_bit1(b):
             data = data | 1
         else:
-            print("Error: Invalid bit width (%d)" % b)
+            logger.warning("Invalid bit width (%d)", b)
             return None
 
     return (dataset[0][0], data, num_bits)
@@ -146,12 +105,13 @@ class RXB6(object):
     """
     Simple rxb6 class
     """
-    def __init__(self, device):
+    def __init__(self, device, config=None):
         self.device = device
+        self.config = config
 
     def read(self, timeout=0):
         """
-        Read and return sensor records from the device
+        Read and return sensor data sets
         """
         orig = None
         if timeout:
@@ -196,22 +156,32 @@ class RXB6(object):
         """
         Read and return data records
         """
-        for data in self.read(timeout=timeout):
-            val = decode_set(data)
-            if val:
-                yield val
+        for dataset in self.read(timeout=timeout):
+            datarecord = decode_set(dataset)
+            if datarecord:
+                yield datarecord
 
     def read_decoded(self, timeout=0):
         """
-        Read and return decoded records
+        Read and return decoded data records
         """
-        for data in self.read_record(timeout=timeout):
-            val = decode_record(data)
-            if val:
-                yield val
+        for datarecord in self.read_record(timeout=timeout):
+            decoded = sensors.decode(datarecord, self.config)
+            if decoded:
+                yield decoded
 
     def read_average(self, timeout):
         """
         Read and return averaged data
         """
         return average_data(self.read_decoded(timeout=timeout))
+
+    def scan(self, timeout=0):
+        """
+        Scan for (new) sensors
+        """
+        for datarecord in self.read_record(timeout=timeout):
+            data = sensors.identify(datarecord)
+            if data:
+                for d in data:
+                    yield d
