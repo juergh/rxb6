@@ -1,0 +1,11 @@
+*~
+.cache.mk
+*.ko.cmd
+*.o.cmd
+*.ko
+*.mod.c
+*.o
+.tmp_versions
+Module.symvers
+modules.order
+scripts/lib/__pycache__
