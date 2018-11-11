@@ -1,7 +1,12 @@
 #!/usr/bin/python3
 #
+# CGI script for rendering a HTML page with RXB6 sensor data
 #
+# Copyright (C) 2018 Juerg Haefliger <juergh@gmail.com>
 #
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 2 as published by
+# the Free Software Foundation.
 
 import cgitb
 cgitb.enable()  # for troubleshooting
