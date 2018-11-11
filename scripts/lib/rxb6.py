@@ -13,6 +13,7 @@ import signal
 from socket import gethostname
 import sys
 import time
+import yaml
 
 from lib import sensors
 
@@ -20,7 +21,6 @@ from lib import sensors
 logging.basicConfig(level=logging.INFO, format="%(asctime)s " +
                     gethostname() + " rxb6: %(message)s",
                     datefmt="%b %d %H:%M:%S")
-logger = logging.getLogger("rxb6")
 
 
 def average_data(data):
@@ -86,7 +86,7 @@ def decode_set(dataset):
         elif sensors.is_bit1(b):
             data = data | 1
         else:
-            logger.warning("Invalid bit width (%d)", b)
+            logging.warning("Invalid bit width (%d)", b)
             return None
 
     return (dataset[0][0], data, num_bits)
@@ -107,7 +107,10 @@ class RXB6(object):
     """
     def __init__(self, device, config=None):
         self.device = device
-        self.config = config
+        self.config = None
+        if config:
+            with open(config) as fh:
+                self.config = yaml.load(fh)
 
     def read(self, timeout=0):
         """
