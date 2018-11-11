@@ -194,9 +194,9 @@ def decode(datarecord, sensor_config):
     """
     for sensor_decoder in SENSORS:
         sensor_data = sensor_decoder(datarecord)
-        sensor = sensor_data["sensor"]
-        if sensor in sensor_config:
-            sensor_data["name"] = sensor_config[sensor]
-            return sensor_data
-
+        if sensor_data:
+            sensor = sensor_data["sensor"]
+            if sensor in sensor_config:
+                sensor_data["name"] = sensor_config[sensor]
+                return sensor_data
     return None
