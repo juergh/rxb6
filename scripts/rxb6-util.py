@@ -2,12 +2,18 @@
 #
 # RXB6 utility
 #
+# Copyright (C) 2018 Juerg Haefliger <juergh@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 2 as published by
+# the Free Software Foundation.
 
 import argparse
+import logging
 import sqlite3
 import sys
 
-from lib import rxb6
+from lib.rxb6 import RXB6
 
 
 def _dec(name, *args, **kwargs):
@@ -53,27 +59,34 @@ def do_dump(args):
 @add_arg("-b", "--binary", action="store_true", help="print the data in "
          "binary format (only used for 'record').")
 def do_print(args):
-    _rxb6 = rxb6.RXB6("/dev/rxb6", config=args.config)
+    rxb6 = RXB6("/dev/rxb6", config=args.config)
     if args.type == "raw":
-        for data in _rxb6.read():
-            rxb6.logger.info(data)
+        for data in rxb6.read():
+            logging.info(data)
 
     elif args.type == "record":
-        for data in _rxb6.read_record():
+        for data in rxb6.read_record():
             if args.binary:
-                rxb6.logger.info("%s %s %s", data[0],
-                                 format(data[1], "0%db" % data[2]), data[2])
+                logging.info("%s %s %s", data[0],
+                             format(data[1], "0%db" % data[2]), data[2])
             else:
-                rxb6.logger.info(data)
+                logging.info(data)
 
     elif args.type == "decoded":
-        for data in _rxb6.read_decoded():
-            rxb6.logger.info(data)
+        for data in rxb6.read_decoded():
+            logging.info(data)
 
     else:
         while True:
-            for data in _rxb6.read_average(args.duration):
-                rxb6.logger.info(data)
+            for data in rxb6.read_average(args.duration):
+                logging.info(data)
+
+
+@add_help("scan for sensors")
+def do_scan(_args):
+    rxb6 = RXB6("/dev/rxb6")
+    for data in rxb6.scan():
+        logging.info(data)
 
 
 def add_subcommand_parsers(subparser):
