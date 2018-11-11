@@ -196,11 +196,21 @@ def decode(datarecord, sensor_config):
     """
     Decode sensor data
     """
+    if not sensor_config:
+        # If sensor_config is None, run the datarecord through all decoders
+        # and return the list of decoded data
+        sensor_data = []
+        for sensor_decoder in SENSORS:
+            data = sensor_decoder(datarecord)
+            if data:
+                sensor_data.append(data)
+        return sensor_data
+
     for sensor_decoder in SENSORS:
-        sensor_data = sensor_decoder(datarecord)
-        if sensor_data:
-            sensor = sensor_data["sensor"]
+        data = sensor_decoder(datarecord)
+        if data:
+            sensor = data["sensor"]
             if sensor in sensor_config:
-                sensor_data["name"] = sensor_config[sensor]
-                return sensor_data
+                data["name"] = sensor_config[sensor]
+                return data
     return None
