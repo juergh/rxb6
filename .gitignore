@@ -9,3 +9,7 @@
 Module.symvers
 modules.order
 scripts/lib/__pycache__
+pic/*.asm
+pic/*.cod
+pic/*.hex
+pic/*.lst
